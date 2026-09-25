@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Flashcards</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Flashcards">
+<meta name="theme-color" content="#111418">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="manifest" href="manifest.json">
+<style>
+  :root {
+    --bg: #f4f1ea; --card: #ffffff; --ink: #1c1f24; --muted: #7a7f87;
+    --accent: #2f6fed; --shadow: 0 10px 30px rgba(0,0,0,.08);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #111418; --card: #1d2127; --ink: #eef0f3; --muted: #8b929c;
+            --accent: #6b9bff; --shadow: 0 10px 30px rgba(0,0,0,.4); }
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+    -webkit-user-select: none; user-select: none; overscroll-behavior: none; }
+  body { display: flex; flex-direction: column;
+    padding: calc(env(safe-area-inset-top) + 12px) 16px calc(env(safe-area-inset-bottom) + 16px); }
+  header { display: flex; justify-content: space-between; align-items: center;
+    color: var(--muted); font-size: 15px; font-variant-numeric: tabular-nums; }
+  header button { background: none; border: 0; color: var(--accent); font-size: 15px; padding: 8px 0; }
+  .bar { height: 3px; background: color-mix(in srgb, var(--muted) 25%, transparent);
+    border-radius: 2px; margin: 8px 0 16px; overflow: hidden; }
+  .bar > div { height: 100%; background: var(--accent); width: 0; transition: width .2s; }
+  #card { flex: 1; background: var(--card); border-radius: 24px; box-shadow: var(--shadow);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    text-align: center; padding: 24px; cursor: pointer; }
+  #word { font-size: clamp(36px, 11vw, 56px); font-weight: 700; letter-spacing: -.5px;
+    word-break: break-word; }
+  #trans { margin-top: 20px; font-size: clamp(22px, 6.5vw, 30px); color: var(--accent);
+    min-height: 1.3em; opacity: 0; transform: translateY(6px); transition: opacity .15s, transform .15s; }
+  #card.shown #trans { opacity: 1; transform: none; }
+  #hint { margin-top: 28px; color: var(--muted); font-size: 14px; }
+  footer { display: flex; gap: 12px; margin-top: 16px; }
+  footer button { flex: 1; border: 0; border-radius: 16px; padding: 16px; font-size: 17px;
+    font-weight: 600; background: var(--card); color: var(--ink); box-shadow: var(--shadow); }
+  footer button.primary { background: var(--accent); color: #fff; flex: 2; }
+</style>
+</head>
+<body>
+  <header>
+    <span id="count">…</span>
+    <button id="reset">Embaralhar</button>
+  </header>
+  <div class="bar"><div id="progress"></div></div>
+
+  <main id="card">
+    <div id="word">carregando…</div>
+    <div id="trans"></div>
+    <div id="hint">toque para ver a tradução</div>
+  </main>
+
+  <footer>
+    <button id="back">Voltar</button>
+    <button id="next" class="primary">Mostrar</button>
+  </footer>
+
+<script>
+const KEY = 'flashcards-v1';
+let words = [], state = { order: [], pos: 0 }, shown = false;
+
+const $ = id => document.getElementById(id);
+
+function shuffle(n) {
+  const a = Array.from({ length: n }, (_, i) => i);
+  for (let i = n - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch {} }
+
+function load() {
+  try {
+    const s = JSON.parse(localStorage.getItem(KEY));
+    if (s && s.order && s.order.length === words.length) state = s;
+  } catch {}
+  if (state.order.length !== words.length) { state = { order: shuffle(words.length), pos: 0 }; save(); }
+}
+
+function render() {
+  const [en, pt] = words[state.order[state.pos]];
+  $('word').textContent = en;
+  $('trans').textContent = pt;
+  $('card').classList.toggle('shown', shown);
+  $('hint').style.visibility = shown ? 'hidden' : 'visible';
+  $('next').textContent = shown ? 'Próxima' : 'Mostrar';
+  $('count').textContent = `${state.pos + 1} / ${words.length}`;
+  $('progress').style.width = `${(state.pos + 1) / words.length * 100}%`;
+}
+
+function advance() {
+  if (!shown) { shown = true; return render(); }
+  state.pos = (state.pos + 1) % words.length;
+  if (state.pos === 0) state.order = shuffle(words.length);
+  shown = false; save(); render();
+}
+
+function back() {
+  if (state.pos === 0) return;
+  state.pos--; shown = true; save(); render();
+}
+
+$('card').addEventListener('click', advance);
+$('next').addEventListener('click', advance);
+$('back').addEventListener('click', back);
+$('reset').addEventListener('click', () => {
+  if (!confirm('Embaralhar de novo e começar do zero?')) return;
+  state = { order: shuffle(words.length), pos: 0 }; shown = false; save(); render();
+});
+
+fetch('words.json').then(r => r.json()).then(w => { words = w; load(); render(); });
+
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
+</script>
+</body>
+</html>
