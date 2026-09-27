@@ -1,5 +1,5 @@
 // Bump the version whenever words.json or index.html changes, so the phone picks up the new files.
-const CACHE = 'flashcards-v1';
+const CACHE = 'flashcards-v2';
 const FILES = ['./', 'index.html', 'words.json', 'manifest.json', 'icon-180.png'];
 
 self.addEventListener('install', e => {

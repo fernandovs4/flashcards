@@ -29,12 +29,17 @@
   header { display: flex; justify-content: space-between; align-items: center;
     color: var(--muted); font-size: 15px; font-variant-numeric: tabular-nums; }
   header button { background: none; border: 0; color: var(--accent); font-size: 15px; padding: 8px 0; }
+  header .right { display: flex; gap: 16px; }
+  #mode.on { font-weight: 600; }
   .bar { height: 3px; background: color-mix(in srgb, var(--muted) 25%, transparent);
     border-radius: 2px; margin: 8px 0 16px; overflow: hidden; }
   .bar > div { height: 100%; background: var(--accent); width: 0; transition: width .2s; }
   #card { flex: 1; background: var(--card); border-radius: 24px; box-shadow: var(--shadow);
     display: flex; flex-direction: column; align-items: center; justify-content: center;
-    text-align: center; padding: 24px; cursor: pointer; }
+    text-align: center; padding: 24px; cursor: pointer; position: relative; }
+  #fav { position: absolute; top: 8px; right: 8px; background: none; border: 0;
+    font-size: 30px; line-height: 1; padding: 12px; color: var(--muted); cursor: pointer; }
+  #fav.on { color: #f5b301; }
   #word { font-size: clamp(36px, 11vw, 56px); font-weight: 700; letter-spacing: -.5px;
     word-break: break-word; }
   #trans { margin-top: 20px; font-size: clamp(22px, 6.5vw, 30px); color: var(--accent);
@@ -50,11 +55,15 @@
 <body>
   <header>
     <span id="count">…</span>
-    <button id="reset">Embaralhar</button>
+    <div class="right">
+      <button id="mode">★ Favoritas</button>
+      <button id="reset">Embaralhar</button>
+    </div>
   </header>
   <div class="bar"><div id="progress"></div></div>
 
   <main id="card">
+    <button id="fav" aria-label="Favoritar">☆</button>
     <div id="word">carregando…</div>
     <div id="trans"></div>
     <div id="hint">toque para ver a tradução</div>
@@ -66,59 +75,113 @@
   </footer>
 
 <script>
-const KEY = 'flashcards-v1';
-let words = [], state = { order: [], pos: 0 }, shown = false;
+const KEY = 'flashcards-v1', FAVS_KEY = 'flashcards-favs', FAV_DECK_KEY = 'flashcards-favdeck', MODE_KEY = 'flashcards-mode';
+let words = [], state = { order: [], pos: 0 }, favDeck = { order: [], pos: 0 }, shown = false;
+let favs = new Set(), mode = 'all';
 
 const $ = id => document.getElementById(id);
+const deck = () => mode === 'fav' ? favDeck : state;
+const isFav = i => favs.has(words[i][0]);
+const favIndexes = () => words.map((_, i) => i).filter(isFav);
 
-function shuffle(n) {
-  const a = Array.from({ length: n }, (_, i) => i);
-  for (let i = n - 1; i > 0; i--) {
+function shuffle(a) {
+  a = a.slice();
+  for (let i = a.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [a[i], a[j]] = [a[j], a[i]];
   }
   return a;
 }
+const range = n => Array.from({ length: n }, (_, i) => i);
 
-function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch {} }
+function save() {
+  try {
+    localStorage.setItem(KEY, JSON.stringify(state));
+    localStorage.setItem(FAV_DECK_KEY, JSON.stringify(favDeck));
+    localStorage.setItem(FAVS_KEY, JSON.stringify([...favs]));
+    localStorage.setItem(MODE_KEY, mode);
+  } catch {}
+}
+
+function read(key) { try { return JSON.parse(localStorage.getItem(key)); } catch { return null; } }
 
 function load() {
-  try {
-    const s = JSON.parse(localStorage.getItem(KEY));
-    if (s && s.order && s.order.length === words.length) state = s;
-  } catch {}
-  if (state.order.length !== words.length) { state = { order: shuffle(words.length), pos: 0 }; save(); }
+  const s = read(KEY);
+  if (s && s.order && s.order.length === words.length) state = s;
+  else state = { order: shuffle(range(words.length)), pos: 0 };
+  favs = new Set(read(FAVS_KEY) || []);
+  const f = read(FAV_DECK_KEY);
+  if (f && f.order) favDeck = f;
+  try { mode = localStorage.getItem(MODE_KEY) === 'fav' ? 'fav' : 'all'; } catch {}
+  if (mode === 'fav') enterFav(); else save();
+}
+
+// Resume the favorites deck if it still has the same words; rebuild it if favorites changed.
+function enterFav() {
+  const idx = favIndexes();
+  if (!idx.length) { mode = 'all'; save(); return false; }
+  const same = favDeck.order.length === idx.length && favDeck.order.every(isFav) && favDeck.pos < idx.length;
+  if (!same) favDeck = { order: shuffle(idx), pos: 0 };
+  mode = 'fav'; save(); return true;
 }
 
 function render() {
-  const [en, pt] = words[state.order[state.pos]];
+  const d = deck(), i = d.order[d.pos];
+  const [en, pt] = words[i];
   $('word').textContent = en;
   $('trans').textContent = pt;
   $('card').classList.toggle('shown', shown);
   $('hint').style.visibility = shown ? 'hidden' : 'visible';
   $('next').textContent = shown ? 'Próxima' : 'Mostrar';
-  $('count').textContent = `${state.pos + 1} / ${words.length}`;
-  $('progress').style.width = `${(state.pos + 1) / words.length * 100}%`;
+  $('count').textContent = `${mode === 'fav' ? '★ ' : ''}${d.pos + 1} / ${d.order.length}`;
+  $('progress').style.width = `${(d.pos + 1) / d.order.length * 100}%`;
+  $('fav').textContent = isFav(i) ? '★' : '☆';
+  $('fav').classList.toggle('on', isFav(i));
+  $('mode').textContent = mode === 'fav' ? 'Todas' : `★ Favoritas (${favs.size})`;
+  $('mode').classList.toggle('on', mode === 'fav');
 }
 
 function advance() {
   if (!shown) { shown = true; return render(); }
-  state.pos = (state.pos + 1) % words.length;
-  if (state.pos === 0) state.order = shuffle(words.length);
+  const d = deck();
+  // In favorites mode, a card unstarred on the way drops out of the deck.
+  if (mode === 'fav' && !isFav(d.order[d.pos])) d.order.splice(d.pos, 1);
+  else d.pos++;
+  if (!d.order.length) { mode = 'all'; alert('Sem favoritas. Voltando para todas as palavras.'); }
+  else if (d.pos >= d.order.length) {
+    d.pos = 0;
+    d.order = mode === 'fav' ? shuffle(favIndexes()) : shuffle(range(words.length));
+  }
   shown = false; save(); render();
 }
 
 function back() {
-  if (state.pos === 0) return;
-  state.pos--; shown = true; save(); render();
+  const d = deck();
+  if (d.pos === 0) return;
+  d.pos--; shown = true; save(); render();
+}
+
+function toggleFav(e) {
+  e.stopPropagation();
+  const d = deck(), en = words[d.order[d.pos]][0];
+  if (favs.has(en)) favs.delete(en); else favs.add(en);
+  save(); render();
 }
 
 $('card').addEventListener('click', advance);
+$('fav').addEventListener('click', toggleFav);
 $('next').addEventListener('click', advance);
 $('back').addEventListener('click', back);
+$('mode').addEventListener('click', () => {
+  if (mode === 'fav') mode = 'all';
+  else if (!enterFav()) return alert('Toque na ☆ de uma palavra para salvá-la nas favoritas.');
+  shown = false; save(); render();
+});
 $('reset').addEventListener('click', () => {
   if (!confirm('Embaralhar de novo e começar do zero?')) return;
-  state = { order: shuffle(words.length), pos: 0 }; shown = false; save(); render();
+  if (mode === 'fav') favDeck = { order: shuffle(favIndexes()), pos: 0 };
+  else state = { order: shuffle(range(words.length)), pos: 0 };
+  shown = false; save(); render();
 });
 
 fetch('words.json').then(r => r.json()).then(w => { words = w; load(); render(); });
